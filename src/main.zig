@@ -1,19 +1,56 @@
 const std = @import("std");
-const http = std.http;
 const GeneralPurposeAllocator = std.heap.GeneralPurposeAllocator;
+const Allocator = std.mem.Allocator;
 const Uri = std.Uri;
+const http = std.http;
 const math = std.math;
 const json = std.json;
+const process = std.process;
+const print = std.debug.print;
+const eql = std.mem.eql;
+const trim = std.mem.trim;
+const ResponseData = @import("./struct/response.zig").ResponseData;
 
 pub fn main() !void {
-    std.debug.print("I wish the wisdom...\n", .{});
-
     var gpa = GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-
     const allocator = gpa.allocator();
 
-    const uri = Uri.parse("https://feed.evangelizo.org/MG/days") catch unreachable;
+    const args = try process.argsAlloc(allocator);
+    defer process.argsFree(allocator, args);
+
+    const options = args[1..];
+
+    const is_empty_options: bool = options.len == 0;
+    if (is_empty_options) {
+        try sapientia_fn(allocator);
+        return;
+    }
+
+    const is_help_first_option: bool = eql(u8, options[0], "-h") or eql(u8, options[0], "--help");
+    if (is_help_first_option) {
+        help_displayer();
+        return;
+    }
+}
+
+fn help_displayer() void {
+    print("\n", .{});
+    print(">>> Name: Sapientia CLI\n", .{});
+    print(">>> Description: Sapientia CLI is a command-line tool which display daily gospel.\n", .{});
+    print("Sapientia is written in ziglang (https://ziglang.org)\n", .{});
+    print("\n", .{});
+    print(">>> Supported Options:\n", .{});
+    print("- `-h` or `--help`: Displays help on how to use the CLI.\n", .{});
+    print("- `-d [date]` or `--date [date]`: Displays gospel for specific date, by default today.\n", .{});
+    print("- `-l [MG|AN|FR]` or `--lang [MG|AN|FR]`: Displays gospel for specific date, by default MG\n.", .{});
+    print("\n", .{});
+}
+
+fn sapientia_fn(allocator: Allocator, lang: []u8, date: []u8) !void {
+    _ = date;
+    _ = lang;
+    const uri = Uri.parse("https://feed.evangelizo.org/FR/days/2023-11-01/readings") catch unreachable;
 
     var client = http.Client{ .allocator = allocator };
     defer client.deinit();
@@ -31,25 +68,14 @@ pub fn main() !void {
     var response_body = try request.reader().readAllAlloc(allocator, math.maxInt(usize));
     defer allocator.free(response_body);
 
-    const Link = struct { rel: []const u8, uri: []const u8 };
-
-    const Book = struct { code: []const u8, short_title: []const u8, full_title: []const u8 };
-
-    const Readings = struct { id: []const u8, reading_code: []const u8, before_reading: ?[]const u8, chorus: ?[]const u8, type: []const u8, audio_url: ?[]const u8, reference_displayed: []const u8, text: []const u8, href: ?[]const u8, source: ?[]const u8, book_type: []const u8, title: []const u8, book: Book };
-
-    const ImageLinks = struct { large: ?[]const u8, ico: ?[]const u8 };
-
-    const Liturgy = struct { id: []const u8, title: []const u8, description: ?[]const u8, source: ?[]const u8, href: []const u8, image_links: ImageLinks };
-
-    const Data = struct { date: []const u8, date_displayed: []const u8, liturgic_title: []const u8, has_liturgic_description: bool, links: []Link, readings: []Readings, liturgy: Liturgy, special_liturgy: ?[]const u8, commentary: ?[]const u8, saints: [][]const u8 };
-
-    const ResponseBodyStruct = struct { data: Data, href: []const u8 };
-
-    const response_data = try json.parseFromSlice(ResponseBodyStruct, allocator, response_body, .{});
+    const response_data = try json.parseFromSlice(ResponseData, allocator, response_body, .{});
     defer response_data.deinit();
 
-    const readings_len = response_data.value.data.readings.len;
-    const gospel = response_data.value.data.readings[readings_len - 1];
+    const readings_len = response_data.value.data.len;
+    const gospel = response_data.value.data[readings_len - 1];
 
-    std.debug.print("{s}\n", .{gospel.text});
+    print("\n", .{});
+    print(">>> {s}\n\n", .{gospel.book.full_title});
+    print("{s}\n", .{gospel.text});
+    print("\n", .{});
 }
